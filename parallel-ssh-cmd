@@ -2,8 +2,7 @@
 """
 A fast parallel SSH with output for simple parsing.
 
-This can be trusted for automatic system administration tasks and has
-an output which is easy to parse.
+The goal is to make it trustworthy for automatic system administration tasks and output results in a format which is easy to parse.
 
 Main features:
  - Does unordered parallel execution
@@ -12,7 +11,7 @@ Main features:
  - Accepts filename with hosts or list of nodes
  - [todo] Use regexp to select set of nodes from list of nodes
  - Supports only SSH with the use of password-less logins
- - [todo] Ctrl-C behaviour similar to pdsh
+ - Provides continuesly updated status of all current connections
  - No streaming output from executions, but partial output on timeouts
  - Outputs stderr to stderr and stdout to stdout
 
@@ -39,15 +38,12 @@ Author: Rune Moellegaard Friborg <runef@birc.au.dk>
 ##############################################################
 ####################### Configuration ########################
 
-VERSION="0.03"
-UPDATED="2014-05-28"
+VERSION="0.04"
+UPDATED="2014-06-10"
 SSHCMD="/usr/bin/ssh"
 DEFAULT_CONNECT_TIMEOUT=10
 DEFAULT_COMMAND_TIMEOUT=9999999
 DEFAULT_MAXTHREADS=10
-
-##############################################################
-########################## Classes ###########################
 
 import os
 import sys
@@ -55,7 +51,14 @@ import getopt
 import subprocess
 import time
 import threading
-from Queue import Queue
+import signal
+from math import ceil
+from Queue import Queue, Empty
+
+
+##############################################################
+########################## Classes ###########################
+
 
 class SSHThread(threading.Thread):
     """Takes a command, executes it, returns output and quits before timeout"""
@@ -72,6 +75,9 @@ class SSHThread(threading.Thread):
         self.started = time.time()
         self.result = resultQueue
         self.start()
+
+    def status(self):
+        return "%s[%ds]" % (self.host, ceil(time.time()-self.started))
 
     def run(self):
         stdout, stderr = self.process.communicate()
@@ -92,9 +98,10 @@ class SSHThread(threading.Thread):
             else:
                 raise e
 
+
 class JobHandler(threading.Thread):
     """Starts threads"""
-    def __init__(self, nodelist, command, maxthreads, connect_timeout, command_timeout):
+    def __init__(self, nodelist, command, maxthreads, connect_timeout, command_timeout, status):
         threading.Thread.__init__(self)
         self.daemon = True
         self.nodelist = nodelist[:]
@@ -102,6 +109,7 @@ class JobHandler(threading.Thread):
         self.maxthreads = maxthreads
         self.connect_timeout = connect_timeout
         self.command_timeout = command_timeout
+        self.output_status = status
 
         self.threads = []
         self.resultQueue = Queue(999)
@@ -162,7 +170,19 @@ class JobHandler(threading.Thread):
         """
         # Blocks until result or done
         if self.running:
-            result = self.resultQueue.get()
+            if self.output_status:
+                ok = False
+                while not ok: 
+                    try:
+                        result = self.resultQueue.get(timeout=1)
+                        ok = True
+                    except Empty:
+                        sys.stdout.write("# waiting on %s\n" % (", ".join([t.status() for t in self.threads])))
+                        sys.stdout.flush()
+            else:
+                result = self.resultQueue.get()
+
+
             if not result == False:
                 return result
             else:
@@ -180,7 +200,7 @@ def main():
     # Parse parameters
     args = sys.argv[1:]
     try:
-        opts, args = getopt.getopt(args, "hc:t:p:f:n:", ["help", "connect-timeout=", "command-timeout=", "max-threads=", "nodefile=", "nodelist="])
+        opts, args = getopt.getopt(args, "hsc:t:p:f:n:", ["help", "status", "connect-timeout=", "command-timeout=", "max-threads=", "nodefile=", "nodelist="])
     except getopt.GetoptError, err:
         # print help information and exit:
         print str(err) # will print something like "option -a not recognized"
@@ -192,6 +212,7 @@ def main():
         "command_timeout" :DEFAULT_COMMAND_TIMEOUT,
         "maxthreads"      :DEFAULT_MAXTHREADS,
         "nodelist"        :[],
+        "status"          :False,
         "command"         :""
         }
     for o, a in opts:
@@ -214,6 +235,8 @@ def main():
         elif o in ("-n", "--nodelist"):
             # Nodelist overwrites nodefile
             PARAMETERS["nodelist"] = a.strip().split(",")
+        elif o in ("-s", "--status"):
+            PARAMETERS["status"] = True
         elif o in ("-h", "--help"):
             usage()
             sys.exit()
@@ -233,15 +256,14 @@ def main():
     # Get command
     command = " ".join(args)
 
+
     # Create pool object
     pool = JobHandler(PARAMETERS["nodelist"],
                    command,
                    PARAMETERS["maxthreads"],
                    PARAMETERS["connect_timeout"],
-                   PARAMETERS["command_timeout"])
-
-
-    
+                   PARAMETERS["command_timeout"],
+                   PARAMETERS["status"])
 
     N = len(PARAMETERS["nodelist"])
     i = 1
@@ -283,13 +305,14 @@ Parameters
   -p, --max-threads      Maximum amount of parallel threads
   -f, --nodefile         File with list of nodes (one node per line)
   -n, --nodelist         Comma separated list of nodes (overwrites -f)
+  -s, --status           Output status message of all connections (use for interactive sessions)
 
   -h, --help      This help message
 """)
 
-
 if __name__ == "__main__":
     main()
+
                                
 
 
