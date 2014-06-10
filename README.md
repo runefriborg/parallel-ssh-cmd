@@ -3,8 +3,7 @@ parallel-ssh-cmd
 
 A fast parallel SSH with output for simple parsing
 
-This can be trusted for automatic system administration tasks and has
-an output which is easy to parse.
+The goal is to make it trustworthy for automatic system administration tasks and output results in a format which is easy to parse.
 
 Main features:
  - Does unordered parallel execution
@@ -13,7 +12,7 @@ Main features:
  - Accepts filename with hosts or list of nodes
  - [todo] Use regexp to select set of nodes from list of nodes
  - Supports only SSH with the use of password-less logins
- - [todo] Ctrl-C behaviour similar to pdsh
+ - Provides continuesly updated status of all current connections
  - No streaming output from executions, but partial output on timeouts
  - Outputs stderr to stderr and stdout to stdout
 
