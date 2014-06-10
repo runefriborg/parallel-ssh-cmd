@@ -38,8 +38,8 @@ Author: Rune Moellegaard Friborg <runef@birc.au.dk>
 ##############################################################
 ####################### Configuration ########################
 
-VERSION="0.04"
-UPDATED="2014-06-10"
+VERSION="0.05"
+UPDATED="2014-06-11"
 SSHCMD="/usr/bin/ssh"
 DEFAULT_CONNECT_TIMEOUT=10
 DEFAULT_COMMAND_TIMEOUT=9999999
@@ -71,16 +71,28 @@ class SSHThread(threading.Thread):
                               "-o", "ConnectionAttempts=1",
                               "-o", "RSAAuthentication=no",
                               "-o", "PasswordAuthentication=no",
-                              host, command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                              host, "echo ok && " + command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.started = time.time()
         self.result = resultQueue
+        self.connected = False
         self.start()
 
     def status(self):
-        return "%s[%ds]" % (self.host, ceil(time.time()-self.started))
+        state = "C"
+        if self.connected:
+            state = "R"
+        return "%s[%s:%ds]" % (self.host, state, ceil(time.time()-self.started))
 
     def run(self):
-        stdout, stderr = self.process.communicate()
+
+        first_three_characters = self.process.stdout.read(3)
+        if first_three_characters[:2] == "ok":
+            self.connected = True
+            stdout, stderr = self.process.communicate()
+        else:
+            stdout, stderr = self.process.communicate()
+            stdout = first_three_characters + stdout
+
         self.result.put((self.host, self.process.returncode, stdout, stderr))
         
         
@@ -123,10 +135,17 @@ class JobHandler(threading.Thread):
                 self.threads.remove(t)
 
     def timeoutthreadlist(self):
-        limit = time.time()-self.command_timeout
+        commandlimit = time.time()-self.command_timeout
+        connectlimit = time.time()-self.connect_timeout
         for t in self.threads:
-            if t.is_alive() and t.started < limit:
-                t.kill()
+            if t.is_alive():
+                if t.connected:
+                    if t.started < commandlimit:
+                        t.kill()
+                else:
+                    if t.started < connectlimit:
+                        t.kill()
+
         
     def run(self):
         # To enable popping nodes from the end
