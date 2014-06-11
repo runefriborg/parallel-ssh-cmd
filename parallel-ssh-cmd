@@ -9,7 +9,7 @@ Main features:
  - Set timeout for connection and commands. Retrieve output for failed executions.
  - Set maximum size of thread pool
  - Accepts filename with hosts or list of nodes
- - [todo] Use regexp to select set of nodes from list of nodes
+ - Use regexp to select set of nodes from list of nodes
  - Supports only SSH with the use of password-less logins
  - Provides continuesly updated status of all current connections
  - No streaming output from executions, but partial output on timeouts
@@ -38,12 +38,13 @@ Author: Rune Moellegaard Friborg <runef@birc.au.dk>
 ##############################################################
 ####################### Configuration ########################
 
-VERSION="0.05"
+VERSION="1.00"
 UPDATED="2014-06-11"
 SSHCMD="/usr/bin/ssh"
 DEFAULT_CONNECT_TIMEOUT=10
 DEFAULT_COMMAND_TIMEOUT=9999999
 DEFAULT_MAXTHREADS=10
+CONNECT_TOKEN="ok"
 
 import os
 import sys
@@ -66,12 +67,15 @@ class SSHThread(threading.Thread):
         threading.Thread.__init__(self)
         self.daemon = True
         self.host = host
+
+        CONNECT_CHECK = "echo " + CONNECT_TOKEN + " && "
+
         self.process = subprocess.Popen(["/usr/bin/ssh", 
                               "-o", "ConnectTimeout="+str(connect_timeout),
                               "-o", "ConnectionAttempts=1",
                               "-o", "RSAAuthentication=no",
                               "-o", "PasswordAuthentication=no",
-                              host, "echo ok && " + command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                              host, CONNECT_CHECK + command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.started = time.time()
         self.result = resultQueue
         self.connected = False
@@ -85,13 +89,13 @@ class SSHThread(threading.Thread):
 
     def run(self):
 
-        first_three_characters = self.process.stdout.read(3)
-        if first_three_characters[:2] == "ok":
+        connect_check_characters = self.process.stdout.read(3)
+        if connect_check_characters[:len(CONNECT_TOKEN)] == CONNECT_TOKEN:
             self.connected = True
             stdout, stderr = self.process.communicate()
         else:
             stdout, stderr = self.process.communicate()
-            stdout = first_three_characters + stdout
+            stdout = connect_check_characters + stdout
 
         self.result.put((self.host, self.process.returncode, stdout, stderr))
         
@@ -190,6 +194,7 @@ class JobHandler(threading.Thread):
         # Blocks until result or done
         if self.running:
             if self.output_status:
+                # If no results for a second, then a thread status is written to stdout. 
                 ok = False
                 while not ok: 
                     try:
@@ -199,8 +204,8 @@ class JobHandler(threading.Thread):
                         sys.stdout.write("# waiting on %s\n" % (", ".join([t.status() for t in self.threads])))
                         sys.stdout.flush()
             else:
+                # Block until result
                 result = self.resultQueue.get()
-
 
             if not result == False:
                 return result
@@ -219,7 +224,7 @@ def main():
     # Parse parameters
     args = sys.argv[1:]
     try:
-        opts, args = getopt.getopt(args, "hsc:t:p:f:n:", ["help", "status", "connect-timeout=", "command-timeout=", "max-threads=", "nodefile=", "nodelist="])
+        opts, args = getopt.getopt(args, "hsc:t:p:f:n:r:", ["help", "status", "connect-timeout=", "command-timeout=", "max-threads=", "nodefile=", "nodelist=", "regexp="])
     except getopt.GetoptError, err:
         # print help information and exit:
         print str(err) # will print something like "option -a not recognized"
@@ -231,6 +236,7 @@ def main():
         "command_timeout" :DEFAULT_COMMAND_TIMEOUT,
         "maxthreads"      :DEFAULT_MAXTHREADS,
         "nodelist"        :[],
+        "regexp"          :".*",
         "status"          :False,
         "command"         :""
         }
@@ -247,13 +253,15 @@ def main():
         elif o in ("-f", "--nodefile"):
             # Read file and add nodes to nodelist
             if os.path.isfile(a):
-                PARAMETERS["nodelist"] = file(a).read().strip().split("\n")
+                PARAMETERS["nodelist"].extend(file(a).read().strip().split("\n"))
             else:
                 sys.stderr.write("Nodefile '"+a+"' could not be found!")
                 sys.exit(1)
         elif o in ("-n", "--nodelist"):
-            # Nodelist overwrites nodefile
-            PARAMETERS["nodelist"] = a.strip().split(",")
+            # Nodelist supplements nodefile
+            PARAMETERS["nodelist"].extend(a.strip().split(","))
+        elif o in ("-r", "--regexp"):
+            PARAMETERS["regexp"] = a
         elif o in ("-s", "--status"):
             PARAMETERS["status"] = True
         elif o in ("-h", "--help"):
@@ -271,6 +279,11 @@ def main():
     if len(PARAMETERS["nodelist"]) == 0:
         sys.stderr.write("No valid nodes specified!")
         sys.exit(1)
+
+    # Filter nodelist
+    import re
+    m = re.compile(PARAMETERS["regexp"])
+    PARAMETERS["nodelist"] = [host for host in PARAMETERS["nodelist"] if m.match(host)]
 
     # Get command
     command = " ".join(args)
@@ -320,10 +333,11 @@ Run a command on N nodes in parallel
 
 Parameters
   -c, --connect-timeout  Set timeout on SSH connection phase (default 10 seconds)
-  -t, --command-timeout  Set timeout for connection+command phase
+  -t, --command-timeout  Set timeout for command phase
   -p, --max-threads      Maximum amount of parallel threads
   -f, --nodefile         File with list of nodes (one node per line)
-  -n, --nodelist         Comma separated list of nodes (overwrites -f)
+  -n, --nodelist         Comma separated list of nodes (siupplements -)
+  -r, --regexp           Filter nodelist using Python-style regular expression
   -s, --status           Output status message of all connections (use for interactive sessions)
 
   -h, --help      This help message
