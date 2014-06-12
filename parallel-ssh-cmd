@@ -4,6 +4,11 @@ A fast parallel SSH with output for simple parsing.
 
 The goal is to make it trustworthy for automatic system administration tasks and output results in a format which is easy to parse.
 
+Features to ease parsing
+ - Every written line includes hostname and returncode for command. Search for commands with returncode != 0 to detect faults.
+ - For every command executed, at least one line is written to stdout. In case the command outputs nothing:
+        1/1  s03n11         0  
+
 Main features:
  - Does unordered parallel execution
  - Set timeout for connection and commands. Retrieve output for failed executions.
@@ -38,8 +43,8 @@ Author: Rune Moellegaard Friborg <runef@birc.au.dk>
 ##############################################################
 ####################### Configuration ########################
 
-VERSION="1.00"
-UPDATED="2014-06-11"
+VERSION="1.01"
+UPDATED="2014-06-12"
 SSHCMD="/usr/bin/ssh"
 DEFAULT_CONNECT_TIMEOUT=10
 DEFAULT_COMMAND_TIMEOUT=9999999
@@ -201,7 +206,12 @@ class JobHandler(threading.Thread):
                         result = self.resultQueue.get(timeout=1)
                         ok = True
                     except Empty:
-                        sys.stdout.write("# waiting on %s\n" % (", ".join([t.status() for t in self.threads])))
+                        o = "# waiting on %d: %s\n" % (len(self.threads), ", ".join([t.status() for t in self.threads]))
+                        l = 120
+                        if len(o) > l:
+                            o = o[:(l-3)] + "..\n"
+
+                        sys.stdout.write(o)
                         sys.stdout.flush()
             else:
                 # Block until result
@@ -336,7 +346,7 @@ Parameters
   -t, --command-timeout  Set timeout for command phase
   -p, --max-threads      Maximum amount of parallel threads
   -f, --nodefile         File with list of nodes (one node per line)
-  -n, --nodelist         Comma separated list of nodes (siupplements -)
+  -n, --nodelist         Comma separated list of nodes (supplements -)
   -r, --regexp           Filter nodelist using Python-style regular expression
   -s, --status           Output status message of all connections (use for interactive sessions)
 
