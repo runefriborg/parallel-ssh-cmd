@@ -22,9 +22,8 @@ Main features:
  - Outputs stderr to stderr and stdout to stdout
 
 Outputs:
-
-Hostname output from host
-  1/10    s01n11    0    s01n11.genomedk.net
+```html
+1/10    s01n11    0    s01n11.genomedk.net
 
 No output from host
   1/10    s01n11    0    
@@ -37,6 +36,7 @@ Timeout of host
   1/10    s01n11    -9  Connection timeout
 
 [index]  [node]  [returncode]  [output]
+```
 
 Author: Rune Moellegaard Friborg <runef@birc.au.dk>
 
