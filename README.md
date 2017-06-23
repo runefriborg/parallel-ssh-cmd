@@ -55,6 +55,7 @@ Never wait more than 10 seconds for the command to finish on a node.
 ```
 
 Multiple lines output from host
+
 ```html
 > parallel-ssh-cmd -n s01n11,s01n12 ps   
      1/2  s01n12         0  PID TTY          TIME CMD
@@ -68,6 +69,7 @@ Multiple lines output from host
 ```
 
 Execute one command at a time in order
+
 ```html
 > parallel-ssh-cmd -p 1 -n s01n11,s01n12,s01n13 hostname
      1/3  s01n11         0  s01n11.genomedk.net
@@ -76,11 +78,13 @@ Execute one command at a time in order
 ```
 
 Output format:
+
 ```html
 [index]  [node]  [returncode]  [output]
 ```
 
 <h4>Help</h4>
+
 ```html
 > parallel-ssh-cmd -h
 parallel-ssh-cmd version 1.01 by Rune M. Friborg (updated 2014-06-12)
